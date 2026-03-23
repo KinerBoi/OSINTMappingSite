@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OSINT Conflict Tracker</title>
+<script src="https://unpkg.com/maplibre-gl@5.1.0/dist/maplibre-gl.js"></script>
+<link href="https://unpkg.com/maplibre-gl@5.1.0/dist/maplibre-gl.css" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#070a11;--panel:rgba(10,14,24,0.95);--border:#151d2e;--t1:#e2e8f0;--t2:#94a3b8;--t3:#475569;--t4:#2a3a52;--red:#ef4444;--blue:#3b82f6;--amber:#f59e0b;--green:#22c55e;--cyan:#06b6d4;--hotred:#ff3333;--hotamber:#ffaa00;--mono:'DM Mono',monospace;--sans:'Outfit',sans-serif}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--bg);color:var(--t1);font-family:var(--sans);overflow:hidden;height:100vh}
+  #map{position:absolute;inset:0}
+  .bar{position:fixed;top:0;left:0;right:0;height:44px;background:linear-gradient(180deg,rgba(7,10,17,.97),rgba(7,10,17,.8));backdrop-filter:blur(16px);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 16px;z-index:10}
+  .bar-l{display:flex;align-items:center;gap:8px}
+  .pdot{width:6px;height:6px;background:var(--red);border-radius:50%;box-shadow:0 0 8px var(--red);animation:p 2s ease-in-out infinite}
+  @keyframes p{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(.6)}}
+  .logo{font-family:var(--mono);font-size:11px;font-weight:500;letter-spacing:2.5px;text-transform:uppercase}
+  .bar-r{display:flex;gap:14px;align-items:center}
+  .st{font-family:var(--mono);font-size:9px;color:var(--t3);display:flex;align-items:center;gap:4px}
+  .sd{width:4px;height:4px;border-radius:50%}
+  .sd.g{background:var(--green);box-shadow:0 0 3px var(--green)}
+  .panel{position:fixed;top:56px;left:10px;z-index:10;width:250px;background:var(--panel);backdrop-filter:blur(20px);border:1px solid var(--border);border-radius:9px;padding:0;overflow:hidden;animation:si .4s ease-out;max-height:calc(100vh - 80px);overflow-y:auto}
+  @keyframes si{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:translateX(0)}}
+  .panel::-webkit-scrollbar{width:3px}
+  .panel::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+  .p-section{padding:11px 13px}
+  .p-divider{height:1px;background:var(--border)}
+  .sec-h{font-family:var(--mono);font-size:8px;letter-spacing:2.5px;text-transform:uppercase;color:var(--t3);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+  .sec-count{color:var(--cyan);font-size:9px;font-family:var(--mono)}
+  .lr{display:flex;align-items:center;gap:7px;padding:4px 0;cursor:pointer}
+  .lr:hover{opacity:.7}
+  .ld{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+  .ln{font-size:11px;color:var(--t2);flex:1}
+  .sw{width:24px;height:13px;background:var(--border);border-radius:7px;position:relative;transition:background .2s;flex-shrink:0}
+  .sw.on{background:var(--blue)}
+  .sw::after{content:'';position:absolute;top:2px;left:2px;width:9px;height:9px;background:#fff;border-radius:50%;transition:transform .2s}
+  .sw.on::after{transform:translateX(11px)}
+  .conflict-item{padding:8px 0;border-bottom:1px solid rgba(21,29,46,.5);cursor:pointer;transition:opacity .15s}
+  .conflict-item:last-child{border-bottom:none}
+  .conflict-item:hover{opacity:.75}
+  .ci-header{display:flex;align-items:center;gap:6px;margin-bottom:3px}
+  .ci-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+  .ci-dot.critical{background:var(--hotred);box-shadow:0 0 6px var(--hotred);animation:p 1.5s ease-in-out infinite}
+  .ci-dot.high{background:var(--amber);box-shadow:0 0 4px var(--amber)}
+  .ci-dot.moderate{background:var(--cyan);box-shadow:0 0 3px var(--cyan)}
+  .ci-name{font-size:11.5px;font-weight:500;color:var(--t1);flex:1}
+  .ci-level{font-family:var(--mono);font-size:8px;letter-spacing:.8px;text-transform:uppercase;padding:1px 4px;border-radius:2px}
+  .ci-level.critical{background:rgba(255,51,51,.15);color:var(--hotred)}
+  .ci-level.high{background:rgba(255,170,0,.12);color:var(--amber)}
+  .ci-level.moderate{background:rgba(6,182,212,.12);color:var(--cyan)}
+  .ci-desc{font-size:10px;color:var(--t3);line-height:1.45;margin-top:2px}
+  .ci-meta{font-family:var(--mono);font-size:8.5px;color:var(--t4);margin-top:3px;display:flex;gap:8px}
+  .nfo{position:fixed;bottom:12px;left:10px;max-width:340px;min-width:260px;background:var(--panel);backdrop-filter:blur(20px);border:1px solid var(--border);border-radius:9px;padding:13px 15px;z-index:10;display:none}
+  .nfo.show{display:block;animation:u .2s ease-out}
+  @keyframes u{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
+  .nx{position:absolute;top:7px;right:9px;background:none;border:none;color:var(--t3);cursor:pointer;font-size:14px}
+  .nx:hover{color:var(--t1)}
+  .nn{font-size:13px;font-weight:600;margin-bottom:3px;padding-right:18px}
+  .nb{display:inline-block;font-family:var(--mono);font-size:8px;letter-spacing:1px;text-transform:uppercase;padding:2px 5px;border-radius:3px;margin-bottom:7px}
+  .ng{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+  .nl{font-family:var(--mono);font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.8px}
+  .nv{font-size:10.5px;color:var(--t2);word-break:break-word}
+  .cb{position:fixed;bottom:4px;right:10px;font-family:var(--mono);font-size:9px;color:var(--t3);background:var(--panel);padding:3px 8px;border-radius:5px;z-index:10}
+  .maplibregl-ctrl-group{background:var(--panel)!important;border:1px solid var(--border)!important;border-radius:7px!important}
+  .maplibregl-ctrl-group button{background:transparent!important;border-color:var(--border)!important}
+  .maplibregl-ctrl-group button span{filter:invert(.6)}
+  .maplibregl-ctrl-attrib{opacity:.2;font-size:7px!important}
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div class="bar">
+  <div class="bar-l"><div class="pdot"></div><span class="logo">OSINT Tracker</span></div>
+  <div class="bar-r">
+    <div class="st"><div class="sd g"></div>Live</div>
+    <div class="st" id="utc-clock">UTC —</div>
+    <div class="st" id="ds"><span id="ds-txt">Initializing...</span></div>
+  </div>
+</div>
+<div class="panel">
+  <div class="p-section">
+    <div class="sec-h"><span>US / Allied Strategic Bases</span><span class="sec-count" id="base-count">—</span></div>
+    <div class="lr" onclick="tog('bases-strategic')"><div class="ld" style="background:#3b82f6"></div><span class="ln">Strategic Installations</span><div class="sw on" id="s-bases-strategic"></div></div>
+    <div class="lr" onclick="tog('bases-activated')"><div class="ld" style="background:#ffaa00;box-shadow:0 0 4px #ffaa00"></div><span class="ln">Conflict-Activated</span><div class="sw on" id="s-bases-activated"></div></div>
+    <div class="lr" onclick="tog('connection-lines')"><div class="ld" style="background:transparent;border:1px solid #ffaa0066"></div><span class="ln">Projection Lines</span><div class="sw on" id="s-connection-lines"></div></div>
+  </div>
+  <div class="p-divider"></div>
+  <div class="p-section">
+    <div class="sec-h"><span>Active Conflict Zones</span><span class="sec-count" id="conflict-count">—</span></div>
+    <div class="lr" onclick="tog('conflicts')"><div class="ld" style="background:#ef4444"></div><span class="ln">Conflict Events</span><div class="sw on" id="s-conflicts"></div></div>
+    <div class="lr" onclick="tog('conflict-zones')"><div class="ld" style="background:rgba(239,68,68,.3);border:1px solid rgba(239,68,68,.5);border-radius:50%"></div><span class="ln">Threat Radius</span><div class="sw on" id="s-conflict-zones"></div></div>
+  </div>
+  <div class="p-divider"></div>
+  <div class="p-section">
+    <div class="sec-h"><span>Conflict Feed</span></div>
+    <div id="feed"></div>
+  </div>
+</div>
+<div class="nfo" id="nfo">
+  <button class="nx" onclick="document.getElementById('nfo').classList.remove('show')">×</button>
+  <div class="nn" id="i-n"></div><div class="nb" id="i-b"></div>
+  <div class="ng">
+    <div><div class="nl">Type</div><div class="nv" id="i-t"></div></div>
+    <div><div class="nl">Operator</div><div class="nv" id="i-o"></div></div>
+    <div><div class="nl">Coordinates</div><div class="nv" id="i-c"></div></div>
+    <div><div class="nl">Status</div><div class="nv" id="i-s"></div></div>
+  </div>
+</div>
+<div class="cb" id="cb">—</div>
+
+<script>
+/* ============================================================
+   DATA
+   ============================================================ */
+const STRATEGIC_BASES = [
+  ["Al Udeid Air Base",51.315,25.117,"airfield","US Air Force (CENTCOM CAOC)","middle-east"],
+  ["Al Dhafra Air Base",54.547,24.248,"airfield","US Air Force","middle-east"],
+  ["NSA Bahrain (5th Fleet HQ)",50.604,26.196,"naval","US Navy / NAVCENT","middle-east"],
+  ["Camp Arifjan",47.929,29.104,"army","US Army Central","middle-east"],
+  ["Ali Al Salem Air Base",47.521,29.347,"airfield","US Air Force","middle-east"],
+  ["Prince Sultan Air Base",45.620,24.063,"airfield","US Air Force","middle-east"],
+  ["Incirlik Air Base",35.425,37.002,"airfield","US Air Force","middle-east"],
+  ["RAF Akrotiri",32.987,34.590,"airfield","RAF / US staging","middle-east"],
+  ["Camp Lemonnier",43.159,11.547,"naval","US Navy / AFRICOM","africa"],
+  ["Diego Garcia",72.411,-7.313,"airfield","US Navy / Air Force","indo-pacific"],
+  ["Ramstein Air Base",7.600,49.437,"airfield","US Air Force / NATO AIRCOM","europe"],
+  ["Aviano Air Base",12.596,46.032,"airfield","US Air Force","europe"],
+  ["NAS Sigonella",14.922,37.402,"naval","US Navy","europe"],
+  ["Naval Station Rota",-6.352,36.640,"naval","US Navy","europe"],
+  ["RAF Lakenheath",0.561,52.409,"airfield","US Air Force","europe"],
+  ["Lajes Field",-27.086,38.762,"airfield","US Air Force","europe"],
+  ["Deveselu Aegis Ashore",24.478,44.018,"army","US / NATO BMD","europe"],
+  ["Redzikowo Aegis Ashore",17.092,54.477,"army","US / NATO BMD","europe"],
+  ["Yokosuka Naval Base",139.654,35.283,"naval","US Navy 7th Fleet HQ","indo-pacific"],
+  ["Kadena Air Base",127.767,26.352,"airfield","US Air Force","indo-pacific"],
+  ["Camp Humphreys",127.048,36.963,"army","US Army (USFK HQ)","indo-pacific"],
+  ["Osan Air Base",127.030,37.091,"airfield","US Air Force","indo-pacific"],
+  ["Andersen AFB, Guam",144.930,13.584,"airfield","US Air Force","indo-pacific"],
+  ["MCAS Iwakuni",132.237,34.146,"airfield","US Marine Corps","indo-pacific"],
+  ["Yokota Air Base",139.348,35.748,"airfield","US Air Force (USFJ HQ)","indo-pacific"],
+  ["Misawa Air Base",141.368,40.703,"airfield","US Air Force","indo-pacific"],
+  ["Sasebo Naval Base",129.717,33.159,"naval","US Navy","indo-pacific"],
+  ["Naval Station Norfolk",-76.330,36.946,"naval","US Navy Atlantic Fleet","conus"],
+  ["Pearl Harbor",-157.950,21.345,"naval","US Navy Pacific Fleet HQ","indo-pacific"],
+  ["Joint Base Andrews",-76.870,38.811,"airfield","US Air Force (Presidential)","conus"],
+  ["Thule Air Base",-68.703,76.531,"army","US Space Force (early warning)","europe"],
+  ["Fort Liberty",-78.997,35.139,"army","US Army SOCOM / XVIII Airborne","conus"],
+  ["Whiteman AFB",-93.548,38.730,"airfield","US Air Force (B-2 stealth)","conus"],
+  ["Naval Sub Base Kings Bay",-81.515,30.795,"naval","US Navy (SSBN Atlantic)","conus"],
+  ["Naval Base Kitsap",-122.728,47.564,"naval","US Navy (SSBN Pacific)","conus"],
+];
+
+const CONFLICTS = [
+  {name:"Iran Theater",lon:53,lat:32.5,level:"critical",radius:800,
+   desc:"Operation Epic Fury — US/Israeli strikes on Iranian nuclear and military targets. Iranian retaliatory missile strikes on Gulf bases and Israeli territory.",
+   events:[{text:"Airstrikes on Isfahan nuclear complex",lon:51.86,lat:32.75,time:"6h ago"},{text:"Iranian ballistic missile launch from western Iran",lon:48.3,lat:34.1,time:"4h ago"},{text:"CENTCOM confirms air defense engagement over Bahrain",lon:50.5,lat:26.1,time:"3h ago"},{text:"GPS interference reported across Persian Gulf",lon:52,lat:26.5,time:"2h ago"},{text:"Strait of Hormuz: multiple AIS gaps detected",lon:56.3,lat:26.6,time:"1h ago"}],
+   activates:[0,1,2,3,4,5,6,7,8,9]},
+  {name:"Ukraine Front",lon:35.5,lat:48.5,level:"high",radius:500,
+   desc:"Ongoing Russian-Ukrainian conflict. Eastern frontline active with ground combat, aerial strikes, and drone warfare across multiple axes.",
+   events:[{text:"Russian missile strikes on Kharkiv infrastructure",lon:36.25,lat:49.99,time:"8h ago"},{text:"Ukrainian drone attack on Rostov-on-Don airfield",lon:39.72,lat:47.24,time:"12h ago"},{text:"Frontline advances reported near Avdiivka axis",lon:37.74,lat:48.14,time:"5h ago"}],
+   activates:[10,11,12,13,14,15,16,17,30]},
+  {name:"South China Sea",lon:114.5,lat:12,level:"moderate",radius:600,
+   desc:"Escalating maritime tensions. PLA Navy exercises near Scarborough Shoal. Philippine resupply missions contested at Second Thomas Shoal.",
+   events:[{text:"PLA Navy live-fire exercise east of Hainan",lon:112.5,lat:17.2,time:"18h ago"},{text:"Philippine Coast Guard reports water cannon incident",lon:117.76,lat:9.75,time:"1d ago"},{text:"US carrier group transit through Luzon Strait",lon:121.5,lat:19.8,time:"12h ago"}],
+   activates:[18,19,20,21,22,23,24,25,26,28]},
+  {name:"Red Sea / Houthi",lon:42.5,lat:14.5,level:"high",radius:400,
+   desc:"Houthi anti-shipping attacks continue in Red Sea and Gulf of Aden. US/UK conducting defensive strikes on Houthi launch sites in Yemen.",
+   events:[{text:"Anti-ship ballistic missile targeting commercial vessel",lon:43.2,lat:13.8,time:"10h ago"},{text:"US destroyer intercepts drone swarm near Bab el-Mandeb",lon:43.3,lat:12.6,time:"6h ago"},{text:"Coalition strike on Houthi coastal radar in Hodeidah",lon:42.95,lat:14.80,time:"16h ago"}],
+   activates:[0,2,5,8,9]},
+  {name:"Taiwan Strait",lon:119.5,lat:24,level:"moderate",radius:300,
+   desc:"PLA air and naval activity elevated around Taiwan. Increased ADIZ incursions and PLA Eastern Theater Command exercises.",
+   events:[{text:"37 PLA aircraft enter Taiwan ADIZ in 24hr period",lon:120.5,lat:23.5,time:"1d ago"},{text:"PLA Navy carrier Fujian conducts flight operations",lon:122,lat:25.5,time:"2d ago"}],
+   activates:[18,19,20,22,24,28]}
+];
+
+/* Build GeoJSON */
+const basesGJ={type:'FeatureCollection',features:STRATEGIC_BASES.map((b,i)=>({type:'Feature',geometry:{type:'Point',coordinates:[b[1],b[2]]},properties:{name:b[0],type:b[3],operator:b[4],region:b[5],idx:i}}))};
+const actSet=new Set();CONFLICTS.forEach(c=>(c.activates||[]).forEach(i=>actSet.add(i)));
+const actGJ={type:'FeatureCollection',features:STRATEGIC_BASES.filter((_,i)=>actSet.has(i)).map(b=>({type:'Feature',geometry:{type:'Point',coordinates:[b[1],b[2]]},properties:{name:b[0],type:b[3],operator:b[4]}}))};
+const evtGJ={type:'FeatureCollection',features:CONFLICTS.flatMap(c=>c.events.map(e=>({type:'Feature',geometry:{type:'Point',coordinates:[e.lon,e.lat]},properties:{text:e.text,time:e.time,conflict:c.name,level:c.level}})))};
+const zoneGJ={type:'FeatureCollection',features:CONFLICTS.map(c=>({type:'Feature',geometry:{type:'Point',coordinates:[c.lon,c.lat]},properties:{name:c.name,level:c.level,radius:c.radius}}))};
+const lineGJ={type:'FeatureCollection',features:CONFLICTS.flatMap(c=>(c.activates||[]).map(i=>{const b=STRATEGIC_BASES[i];return{type:'Feature',geometry:{type:'LineString',coordinates:[[c.lon,c.lat],[b[1],b[2]]]},properties:{level:c.level}}}))};
+
+/* ============================================================
+   DAY/NIGHT — Smooth multi-band twilight
+   ============================================================ */
+function terminatorBand(offsetDeg) {
+  const now=new Date(),start=new Date(now.getFullYear(),0,0);
+  const doy=Math.floor((now-start)/86400000);
+  const dec=-23.44*Math.cos((2*Math.PI/365)*(doy+10));
+  const decR=dec*Math.PI/180;
+  const hrs=now.getUTCHours()+now.getUTCMinutes()/60+now.getUTCSeconds()/3600;
+  const subLon=(12-hrs)*15;
+  const dir=dec>0?-1:1;
+  const pts=[];
+  for(let lng=-180;lng<=180;lng+=2){
+    const ha=(lng-subLon)*Math.PI/180;
+    let lat=Math.atan(-Math.cos(ha)/Math.tan(decR))*180/Math.PI;
+    lat+=dir*offsetDeg;
+    lat=Math.max(-89,Math.min(89,lat));
+    pts.push([lng,lat]);
+  }
+  const pole=dec>0?-89:89;
+  const c=[...pts,[180,pole],[-180,pole],[pts[0][0],pts[0][1]]];
+  return{type:'FeatureCollection',features:[{type:'Feature',geometry:{type:'Polygon',coordinates:[c]},properties:{}}]};
+}
+function allBands(){return{b0:terminatorBand(20),b1:terminatorBand(12),b2:terminatorBand(5),b3:terminatorBand(0)};}
+
+/* ============================================================
+   MAP — Uses demotiles (proven to show borders) with
+   satellite+terrain added on top, fading in as you zoom
+   ============================================================ */
+const map = new maplibregl.Map({
+  container:'map',
+  // demotiles: KNOWN WORKING basemap with land, water, borders, labels
+  style:'https://demotiles.maplibre.org/style.json',
+  center:[42,24],
+  zoom:2.5,
+  pitch:0,
+  maxPitch:85,
+  maxZoom:18,
+  minZoom:1.2
+});
+map.addControl(new maplibregl.NavigationControl(),'bottom-right');
+
+/* ============================================================
+   DARKEN — Restyle the demotiles basemap to dark theme
+   with VISIBLE land, CLEAR borders, readable labels
+   ============================================================ */
+function darken(){
+  const layers=map.getStyle().layers||[];
+  for(const l of layers){
+    try{
+      const id=l.id.toLowerCase();
+      if(l.type==='background'){
+        map.setPaintProperty(l.id,'background-color','#070a11');
+      } else if(l.type==='fill'){
+        if(id.includes('water')||id.includes('ocean')||id.includes('sea')){
+          map.setPaintProperty(l.id,'fill-color','#060d1a');
+          map.setPaintProperty(l.id,'fill-opacity',['interpolate',['linear'],['zoom'], 0,1, 5,0.7, 6,0.3, 7,0.1, 8,0]);
+        } else {
+          // Land — visible at globe, fades out to reveal satellite on zoom
+          map.setPaintProperty(l.id,'fill-color','#111d2e');
+          map.setPaintProperty(l.id,'fill-opacity',['interpolate',['linear'],['zoom'], 0,0.9, 4,0.85, 5,0.6, 6,0.3, 7,0.1, 8,0]);
+        }
+      } else if(l.type==='line'){
+        // Borders — bright enough to see clearly
+        map.setPaintProperty(l.id,'line-color','#2a4a70');
+        map.setPaintProperty(l.id,'line-opacity',0.7);
+        try{map.setPaintProperty(l.id,'line-width',1.2)}catch(e){}
+      } else if(l.type==='symbol'){
+        map.setPaintProperty(l.id,'text-color','#5580aa');
+        try{map.setPaintProperty(l.id,'text-halo-color','#070a11');map.setPaintProperty(l.id,'text-halo-width',1.5)}catch(e){}
+      }
+    }catch(e){}
+  }
+}
+
+/* ============================================================
+   ON LOAD
+   ============================================================ */
+map.on('load',()=>{
+  darken();
+  try{map.setProjection({type:'globe'})}catch(e){}
+
+  // --- SATELLITE + TERRAIN ---
+  // Find the first line layer (borders) in the demotiles style to insert satellite below it
+  const styleLayers = map.getStyle().layers || [];
+  const firstLine = styleLayers.find(l => l.type === 'line');
+  const insertBefore = firstLine ? firstLine.id : undefined;
+
+  map.addSource('sat-tiles',{
+    type:'raster',
+    tiles:['https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2020_3857/default/g/{z}/{y}/{x}.jpg'],
+    tileSize:256, maxzoom:15
+  });
+  map.addLayer({
+    id:'satellite-layer',type:'raster',source:'sat-tiles',
+    paint:{
+      'raster-opacity':['interpolate',['linear'],['zoom'], 0,0, 3.5,0, 4.5,0.2, 5.5,0.55, 6.5,0.7, 8,0.75],
+      'raster-brightness-max':0.6,
+      'raster-contrast':0.1,
+      'raster-saturation':-0.3
+    }
+  }, insertBefore); // Insert below borders so they stay visible
+
+  // Terrain DEM
+  map.addSource('terrain-dem',{
+    type:'raster-dem',
+    url:'https://demotiles.maplibre.org/terrain-tiles/tiles.json',
+    tileSize:256
+  });
+  try { map.setTerrain({source:'terrain-dem', exaggeration:2.0}); } catch(e){ console.log('Terrain not supported:', e); }
+
+  // Hillshade
+  map.addSource('hs-dem',{
+    type:'raster-dem',
+    url:'https://demotiles.maplibre.org/terrain-tiles/tiles.json',
+    tileSize:256
+  });
+  const firstSymbol=styleLayers.find(l=>l.type==='symbol');
+  map.addLayer({
+    id:'hs-layer',type:'hillshade',source:'hs-dem',
+    paint:{
+      'hillshade-shadow-color':'#000000',
+      'hillshade-highlight-color':'#1a2540',
+      'hillshade-exaggeration':['interpolate',['linear'],['zoom'], 0,0, 4,0.1, 5.5,0.35, 8,0.5],
+      'hillshade-illumination-direction':315
+    }
+  },firstSymbol?firstSymbol.id:undefined);
+
+  // --- DAY/NIGHT GRADIENT (4 bands, always on) ---
+  const bands=allBands();
+  const dnLayers=[
+    {id:'dn0',src:'dn-s0',data:bands.b0,op:0.06},
+    {id:'dn1',src:'dn-s1',data:bands.b1,op:0.08},
+    {id:'dn2',src:'dn-s2',data:bands.b2,op:0.10},
+    {id:'dn3',src:'dn-s3',data:bands.b3,op:0.10},
+  ];
+  // Total at core night: 0.34 — visible but not crushing
+  for(const d of dnLayers){
+    map.addSource(d.src,{type:'geojson',data:d.data});
+    map.addLayer({id:d.id,type:'fill',source:d.src,paint:{'fill-color':'#000210','fill-opacity':d.op}},firstSymbol?firstSymbol.id:undefined);
+  }
+  setInterval(()=>{
+    try{
+      const b=allBands();
+      map.getSource('dn-s0').setData(b.b0);
+      map.getSource('dn-s1').setData(b.b1);
+      map.getSource('dn-s2').setData(b.b2);
+      map.getSource('dn-s3').setData(b.b3);
+    }catch(e){}
+  },60000);
+
+  // --- INTELLIGENCE DATA LAYERS ---
+  map.addSource('bases',{type:'geojson',data:basesGJ});
+  map.addSource('activated',{type:'geojson',data:actGJ});
+  map.addSource('events',{type:'geojson',data:evtGJ});
+  map.addSource('zones',{type:'geojson',data:zoneGJ});
+  map.addSource('lines',{type:'geojson',data:lineGJ});
+
+  map.addLayer({id:'connection-lines',type:'line',source:'lines',paint:{'line-color':['match',['get','level'],'critical','rgba(255,60,60,0.12)','high','rgba(255,170,0,0.10)','rgba(6,182,212,0.08)'],'line-width':0.8,'line-dasharray':[4,4]}});
+  map.addLayer({id:'conflict-zones',type:'circle',source:'zones',paint:{'circle-radius':['interpolate',['linear'],['zoom'],1,['*',['get','radius'],0.04],4,['*',['get','radius'],0.12],8,['*',['get','radius'],0.5]],'circle-color':['match',['get','level'],'critical','rgba(255,40,40,0.06)','high','rgba(255,170,0,0.05)','rgba(6,182,212,0.04)'],'circle-stroke-width':1,'circle-stroke-color':['match',['get','level'],'critical','rgba(255,40,40,0.2)','high','rgba(255,170,0,0.15)','rgba(6,182,212,0.12)'],'circle-blur':0.6}});
+  map.addLayer({id:'bases-strategic',type:'circle',source:'bases',paint:{'circle-radius':['interpolate',['linear'],['zoom'],1,3,5,5,10,8,15,12],'circle-color':'#3b82f6','circle-opacity':0.8,'circle-stroke-width':1.5,'circle-stroke-color':'#1d4ed8','circle-stroke-opacity':0.5}});
+  map.addLayer({id:'bases-activated',type:'circle',source:'activated',paint:{'circle-radius':['interpolate',['linear'],['zoom'],1,6,5,9,10,14,15,20],'circle-color':'transparent','circle-stroke-width':['interpolate',['linear'],['zoom'],1,1.5,8,2.5],'circle-stroke-color':'#ffaa00','circle-stroke-opacity':0.6}});
+  map.addLayer({id:'conflicts',type:'circle',source:'events',paint:{'circle-radius':['interpolate',['linear'],['zoom'],1,3,5,5,10,8,15,11],'circle-color':['match',['get','level'],'critical','#ff3333','high','#ff8800','#06b6d4'],'circle-opacity':0.85,'circle-stroke-width':2,'circle-stroke-color':['match',['get','level'],'critical','rgba(255,51,51,0.3)','high','rgba(255,136,0,0.25)','rgba(6,182,212,0.2)'],'circle-blur':0.05}});
+  map.addLayer({id:'base-labels',type:'symbol',source:'bases',minzoom:4,layout:{'text-field':['get','name'],'text-size':['interpolate',['linear'],['zoom'],4,8,10,11],'text-offset':[0,1.2],'text-anchor':'top','text-font':['Open Sans Regular'],'text-max-width':10,'text-allow-overlap':false},paint:{'text-color':'#5588bb','text-halo-color':'rgba(7,10,17,0.9)','text-halo-width':1.5}});
+  map.addLayer({id:'event-labels',type:'symbol',source:'events',minzoom:5,layout:{'text-field':['get','text'],'text-size':9,'text-offset':[0,1.3],'text-anchor':'top','text-font':['Open Sans Regular'],'text-max-width':14,'text-allow-overlap':false},paint:{'text-color':'#aa6666','text-halo-color':'rgba(7,10,17,0.9)','text-halo-width':1.3}});
+
+  // --- CLICK HANDLERS ---
+  ['bases-strategic','bases-activated'].forEach(id=>{
+    map.on('click',id,e=>{const p=e.features[0].properties,c=e.features[0].geometry.coordinates,a=actSet.has(p.idx);showInfo(p.name,p.type,p.operator,c,a?'Activated':'Standby',a?'background:rgba(255,170,0,.15);color:#ffaa00;border:1px solid rgba(255,170,0,.3)':'background:rgba(59,130,246,.15);color:#3b82f6;border:1px solid rgba(59,130,246,.3)')});
+    map.on('mouseenter',id,()=>map.getCanvas().style.cursor='pointer');
+    map.on('mouseleave',id,()=>map.getCanvas().style.cursor='');
+  });
+  map.on('click','conflicts',e=>{const p=e.features[0].properties,c=e.features[0].geometry.coordinates,s=p.level==='critical'?'background:rgba(255,51,51,.15);color:#ff3333;border:1px solid rgba(255,51,51,.3)':p.level==='high'?'background:rgba(255,170,0,.15);color:#ffaa00;border:1px solid rgba(255,170,0,.3)':'background:rgba(6,182,212,.15);color:#06b6d4;border:1px solid rgba(6,182,212,.3)';showInfo(p.text,'Conflict Event',p.conflict,c,p.time,s)});
+  map.on('mouseenter','conflicts',()=>map.getCanvas().style.cursor='pointer');
+  map.on('mouseleave','conflicts',()=>map.getCanvas().style.cursor='');
+
+  document.getElementById('base-count').textContent=STRATEGIC_BASES.length;
+  document.getElementById('conflict-count').textContent=CONFLICTS.reduce((a,c)=>a+c.events.length,0);
+  document.getElementById('ds-txt').textContent=STRATEGIC_BASES.length+' bases · '+CONFLICTS.length+' theaters';
+  buildFeed();
+});
+
+map.on('mousemove',e=>{const{lng,lat}=e.lngLat;document.getElementById('cb').textContent=`${Math.abs(lat).toFixed(3)}°${lat>=0?'N':'S'}  ${Math.abs(lng).toFixed(3)}°${lng>=0?'E':'W'}  ·  z${map.getZoom().toFixed(1)}`});
+setInterval(()=>{document.getElementById('utc-clock').textContent='UTC '+new Date().toISOString().substring(11,19)},1000);
+
+function buildFeed(){document.getElementById('feed').innerHTML=CONFLICTS.map(c=>`<div class="conflict-item" onclick="flyTo(${c.lon},${c.lat})"><div class="ci-header"><div class="ci-dot ${c.level}"></div><span class="ci-name">${c.name}</span><span class="ci-level ${c.level}">${c.level}</span></div><div class="ci-desc">${c.desc.substring(0,120)}${c.desc.length>120?'...':''}</div><div class="ci-meta"><span>${c.events.length} events</span><span>${c.activates.length} bases activated</span></div></div>`).join('')}
+function flyTo(lon,lat){map.flyTo({center:[lon,lat],zoom:5.5,pitch:50,duration:1800});document.getElementById('nfo').classList.remove('show')}
+function showInfo(n,t,d,c,s,b){document.getElementById('i-n').textContent=n;document.getElementById('i-b').textContent=s;document.getElementById('i-b').style=b;document.getElementById('i-t').textContent=t;document.getElementById('i-o').textContent=d;document.getElementById('i-c').textContent=c[1].toFixed(4)+', '+c[0].toFixed(4);document.getElementById('i-s').textContent=s;document.getElementById('nfo').classList.add('show')}
+function tog(id){const v=map.getLayoutProperty(id,'visibility');const s=document.getElementById('s-'+id);if(v==='none'){map.setLayoutProperty(id,'visibility','visible');s.classList.add('on')}else{map.setLayoutProperty(id,'visibility','none');s.classList.remove('on')}}
+</script>
+</body>
+</html>
