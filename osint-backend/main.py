@@ -1,6 +1,6 @@
 """
 OSINT Conflict Tracker API v5.2
-Telegram (events + NOTAMs) + OpenSky (aircraft) + AISstream (ships) + Claude AI
+Telegram + OpenSky + AISstream + NOTAM + Claude AI
 """
 
 import os, asyncio, logging, httpx
@@ -26,7 +26,7 @@ AISSTREAM_API_KEY = os.getenv("AISSTREAM_API_KEY", "")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 PORT = int(os.getenv("PORT", "8000"))
 REFRESH = int(os.getenv("REFRESH_INTERVAL", "300"))
-AIRCRAFT_REFRESH = 30
+AIRCRAFT_REFRESH = 60  # 60 seconds to conserve credits on cloud
 
 cache = {
     "events": None, "conflicts": None,
@@ -43,8 +43,7 @@ notam_detector = NOTAMDetector()
 
 
 async def generate_ai_summary(theater_name, events):
-    if not ANTHROPIC_API_KEY or not events:
-        return None
+    if not ANTHROPIC_API_KEY or not events: return None
     event_texts = [f"- [{e.get('time','')}] {e.get('text','')[:100]}" for e in events[:15]]
     prompt = f'You are a military intelligence analyst. Write a 2-3 sentence operational briefing for the "{theater_name}" theater based on these Telegram OSINT reports from the last 48 hours. Be concise and factual.\n\nReports:\n' + "\n".join(event_texts) + "\n\nBriefing:"
     try:
@@ -52,8 +51,7 @@ async def generate_ai_summary(theater_name, events):
             r = await client.post("https://api.anthropic.com/v1/messages",
                 headers={"x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json"},
                 json={"model": "claude-sonnet-4-20250514", "max_tokens": 200, "messages": [{"role": "user", "content": prompt}]})
-            if r.status_code == 200:
-                return r.json()["content"][0]["text"]
+            if r.status_code == 200: return r.json()["content"][0]["text"]
     except Exception as e:
         logger.warning(f"AI summary error: {e}")
     return None
@@ -88,8 +86,7 @@ def build_theater_conflicts(features):
             "text": p.get("text", "")[:100], "lon": f["geometry"]["coordinates"][0],
             "lat": f["geometry"]["coordinates"][1], "time": p.get("time", ""),
             "level": lvl, "summary": p.get("notes", ""), "url": p.get("url", ""),
-            "source": p.get("source", ""),
-            "verified_by": p.get("verified_by", 1),
+            "source": p.get("source", ""), "verified_by": p.get("verified_by", 1),
             "confidence": p.get("confidence", "single source"),
         })
     conflicts = []
@@ -111,30 +108,20 @@ def build_theater_conflicts(features):
         })
     conflicts.sort(key=lambda c: ({"critical":0,"high":1,"moderate":2}.get(c["level"],3), -c["severity_score"]))
     return {"conflicts": conflicts, "metadata": {"count": len(conflicts),
-            "total_events": sum(c["event_count"] for c in conflicts),
-            "fetched_at": datetime.utcnow().isoformat() + "Z"}}
+            "total_events": sum(c["event_count"] for c in conflicts), "fetched_at": datetime.utcnow().isoformat() + "Z"}}
 
 
 async def refresh_telegram():
-    """Refresh both conflict events AND NOTAM detection from Telegram."""
     try:
-        # Fetch raw messages (used by both conflict events and NOTAM detector)
         raw_messages = await telegram.fetch_all_channels(hours=48)
-
-        # 1. Process conflict events (existing pipeline)
         ev = await telegram.fetch_events_geojson(hours=48)
         cache["events"] = ev
         cache["conflicts"] = build_theater_conflicts(ev.get("features", []))
         cache["updated_events"] = datetime.utcnow().isoformat() + "Z"
-
-        # 2. Process NOTAM detection (new pipeline — same messages, different filter)
         from telegram_monitor import extract_location
         notam_detector.process_messages(raw_messages, extract_location)
-        notam_data = notam_detector.get_geojson()
-        logger.info(f"Telegram: {ev['metadata']['count']} events, {notam_data['metadata']['count']} NOTAMs "
-                    f"({notam_data['metadata']['restricted_firs']} airspace, {notam_data['metadata']['gps_zones']} GPS)")
-
-        # 3. AI summaries
+        nd = notam_detector.get_geojson()
+        logger.info(f"Telegram: {ev['metadata']['count']} events, {nd['metadata']['count']} NOTAMs")
         if ANTHROPIC_API_KEY:
             for conflict in cache["conflicts"]["conflicts"]:
                 summary = await generate_ai_summary(conflict["name"], conflict["events"])
@@ -150,7 +137,7 @@ async def refresh_aircraft():
         ac = await adsb.fetch_geojson(military_only=False)
         cache["aircraft"] = ac
         cache["updated_aircraft"] = datetime.utcnow().isoformat() + "Z"
-        logger.info(f"Aircraft: {ac['metadata']['count']} ({ac['metadata']['military']} military)")
+        logger.info(f"Aircraft: {ac['metadata']['count']} ({ac['metadata']['military']} mil) [{ac['metadata'].get('auth','anon')}]")
     except Exception as e:
         logger.error(f"Aircraft refresh failed: {e}")
 
@@ -162,7 +149,7 @@ async def telegram_loop():
         await refresh_telegram()
 
 async def aircraft_loop():
-    await asyncio.sleep(5)
+    await asyncio.sleep(10)
     while True:
         await refresh_aircraft()
         await asyncio.sleep(AIRCRAFT_REFRESH)
@@ -187,10 +174,7 @@ async def lifespan(app):
         if await ais.start(): logger.info("✓ Ship tracker started")
     else:
         logger.warning("✗ No AISstream API key")
-    if ANTHROPIC_API_KEY:
-        logger.info("✓ Claude AI summaries enabled")
-    else:
-        logger.warning("✗ No ANTHROPIC_API_KEY")
+    if ANTHROPIC_API_KEY: logger.info("✓ Claude AI summaries enabled")
     cache["status"] = "live"
     yield
     for t in tasks: t.cancel()
@@ -235,7 +219,6 @@ async def ships(military: bool = Query(False)):
 
 @app.get("/notam")
 async def notam():
-    """Live NOTAM/airspace/GPS jamming data detected from Telegram channels."""
     return notam_detector.get_geojson()
 
 @app.get("/status")
@@ -247,7 +230,7 @@ async def status():
     return {
         "status": cache["status"],
         "telegram": {"events": ev.get("count", 0)},
-        "aircraft": {"total": ac.get("count", 0), "military": ac.get("military", 0)},
+        "aircraft": {"total": ac.get("count", 0), "military": ac.get("military", 0), "auth": ac.get("auth", "none")},
         "ships": {"total": ship_data.get("count", 0), "military": ship_data.get("military", 0)},
         "notam": {"total": nd["count"], "airspace": nd["restricted_firs"], "gps": nd["gps_zones"]},
         "ai_summaries": len(cache["ai_summaries"]),
