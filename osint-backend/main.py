@@ -26,7 +26,7 @@ AISSTREAM_API_KEY = os.getenv("AISSTREAM_API_KEY", "")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 PORT = int(os.getenv("PORT", "8000"))
 REFRESH = int(os.getenv("REFRESH_INTERVAL", "300"))
-AIRCRAFT_REFRESH = 60  # 60 seconds to conserve credits on cloud
+AIRCRAFT_REFRESH = 300  # 5 minutes for anonymous mode
 
 cache = {
     "events": None, "conflicts": None,

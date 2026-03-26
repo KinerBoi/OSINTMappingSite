@@ -73,7 +73,7 @@ class ADSBTracker:
         self.client_secret = client_secret
         self.token = None
         self.token_expiry = None
-        self.auth_failed = False
+        self.auth_failed = True  # Force anonymous — Railway can't reach OpenSky auth server
         self.http = httpx.AsyncClient(timeout=60.0)
 
     async def _get_token(self):
