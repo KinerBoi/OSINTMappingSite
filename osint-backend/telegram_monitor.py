@@ -17,23 +17,17 @@ logger = logging.getLogger("telegram")
 # 25+ CHANNELS — maximum global coverage
 # ============================================================
 OSINT_CHANNELS = [
-    # Intelligence aggregators
-    "intelooperx", "TheIntelLab", "CIG_telegram",
-    # Regional conflict
-    "Middle_East_Spectator", "UkraineNow",
-    # Military analysis
-    "AMilTHINK", "militabordeaux", "osabordeaux", "warabordeaux", "ryabordeaux",
-    # Geopolitical / military tracking
-    "GeoPWatch", "AirAlertUA",
-    # Breaking conflict
-    "breakabordeaux", "SputnikInt",
-    # Maritime / shipping
-    "MarineTraffic_bot", "SeaSecurityBot",
-    # Additional OSINT
-    "IntelDoge", "Liveuamap", "ELINTNews",
-    "RALee85", "sentdefender", "oabordeaux",
-    "NotaWar", "TWZ_DriveMilitary",
-    "GeoConfirmed",
+    "CIG_telegram",
+    "Middle_East_Spectator",
+    "UkraineNow",
+    "GeoPWatch",
+    "SputnikInt",
+    "IntelDoge",
+    "Liveuamap",
+    "ELINTNews",
+    "RALee85",
+    "sentdefender",
+    "MarineTraffic_bot",
 ]
 
 # ============================================================

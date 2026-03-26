@@ -166,9 +166,11 @@ async def lifespan(app):
             logger.info("✓ Telegram connected (events + NOTAMs)")
     else:
         logger.warning("✗ No Telegram credentials")
-    adsb = ADSBTracker(OPENSKY_CLIENT_ID, OPENSKY_CLIENT_SECRET)
-    tasks.append(asyncio.create_task(aircraft_loop()))
-    logger.info("✓ Aircraft tracker started")
+    # Aircraft tracking disabled on cloud (Railway can't reach OpenSky)
+    # Works locally — run backend on your Mac for aircraft data
+    # adsb = ADSBTracker(OPENSKY_CLIENT_ID, OPENSKY_CLIENT_SECRET)
+    # tasks.append(asyncio.create_task(aircraft_loop()))
+    logger.info("✗ Aircraft tracker disabled (cloud network restriction)")
     if AISSTREAM_API_KEY:
         ais = AISTracker(AISSTREAM_API_KEY)
         if await ais.start(): logger.info("✓ Ship tracker started")
