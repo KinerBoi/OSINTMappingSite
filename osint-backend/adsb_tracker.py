@@ -140,7 +140,7 @@ class ADSBTracker:
         self.client_secret = client_secret
         self.token = None
         self.token_expiry = None
-        self.http = httpx.AsyncClient(timeout=30.0)
+        self.http = httpx.AsyncClient(timeout=60.0)
 
     async def _get_token(self):
         """Get OAuth2 token using client_credentials flow."""
