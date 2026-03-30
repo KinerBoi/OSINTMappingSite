@@ -364,15 +364,15 @@ class TelegramMonitor:
 
     async def start(self):
         try:
-            self.client = TelegramClient(self.session_name, self.api_id, self.api_hash)
-            bot_token = os.environ.get('TELEGRAM_BOT_TOKEN')
-            if bot_token:
-                await self.client.start(bot_token=bot_token)
-                logger.info("Telegram connected as bot")
-            else:
-                await self.client.start()
-                me = await self.client.get_me()
-                logger.info(f"Telegram connected as {me.first_name}")
+            self.client = TelegramClient(
+                self.session_name, self.api_id, self.api_hash,
+                device_model="OSINT Tracker",
+                system_version="Linux",
+                app_version="1.0"
+            )
+            await self.client.start()
+            me = await self.client.get_me()
+            logger.info(f"Telegram connected as {me.first_name}")
             self.started = True
             return True
         except Exception as e:
