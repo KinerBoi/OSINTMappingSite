@@ -7,6 +7,7 @@ Telegram OSINT Monitor v5
 """
 
 import re, logging, asyncio
+import os
 from datetime import datetime, timedelta, timezone
 from difflib import SequenceMatcher
 from telethon import TelegramClient
@@ -364,9 +365,14 @@ class TelegramMonitor:
     async def start(self):
         try:
             self.client = TelegramClient(self.session_name, self.api_id, self.api_hash)
-            await self.client.start()
-            me = await self.client.get_me()
-            logger.info(f"Telegram connected as {me.first_name}")
+            bot_token = os.environ.get('TELEGRAM_BOT_TOKEN')
+            if bot_token:
+                await self.client.start(bot_token=bot_token)
+                logger.info("Telegram connected as bot")
+            else:
+                await self.client.start()
+                me = await self.client.get_me()
+                logger.info(f"Telegram connected as {me.first_name}")
             self.started = True
             return True
         except Exception as e:
